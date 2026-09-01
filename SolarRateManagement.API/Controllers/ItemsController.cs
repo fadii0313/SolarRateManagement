@@ -31,17 +31,14 @@ namespace SolarRateManagement.API.Controllers
         {
             var shopId = _shopContext.CurrentShopId;
 
-            // Enforce tenant boundary check
             if (!await IsUserAuthorizedForShop(shopId))
             {
                 return Forbid();
             }
 
-            // Retrieve items: global template items (ShopId == null) 
-            // plus items specific to the active shop (if a shop context is active)
             var items = await _context.Items
                 .Include(i => i.Category)
-                .Where(i => i.IsActive && (i.ShopId == null || i.ShopId == shopId))
+                .Where(i => (i.ShopId == null || i.ShopId == shopId))
                 .OrderBy(i => i.Category.DisplayOrder)
                 .ThenBy(i => i.DisplayOrder)
                 .Select(i => new ItemResponseDto
@@ -71,27 +68,23 @@ namespace SolarRateManagement.API.Controllers
 
             var shopId = _shopContext.CurrentShopId;
 
-            // Tenant boundary security
             if (!await IsUserAuthorizedForShop(shopId))
             {
                 return Forbid();
             }
 
-            // Check if ItemCode already exists for this shop context
             var codeExists = await _context.Items.AnyAsync(i => i.ShopId == shopId && i.ItemCode.ToLower() == createDto.ItemCode.ToLower());
             if (codeExists)
             {
                 return BadRequest(new { Message = $"An item with code '{createDto.ItemCode}' already exists in this shop context." });
             }
 
-            // Validate Category
             var categoryExists = await _context.Categories.AnyAsync(c => c.Id == createDto.CategoryId);
             if (!categoryExists)
             {
                 return BadRequest(new { Message = "The specified category does not exist." });
             }
 
-            // Determine display order (appended to end of category items)
             var maxDisplayOrder = await _context.Items
                 .Where(i => i.CategoryId == createDto.CategoryId && i.ShopId == shopId)
                 .Select(i => (int?)i.DisplayOrder)
@@ -115,19 +108,6 @@ namespace SolarRateManagement.API.Controllers
             _context.Items.Add(newItem);
             await _context.SaveChangesAsync();
 
-            // Record creation in audit log
-            var auditLog = new AuditLog
-            {
-                UserId = _shopContext.CurrentUserId!.Value,
-                Action = "CreateItem",
-                Module = "Catalog",
-                NewValue = $"Created item '{newItem.ItemCode}' in shop context '{shopId}'.",
-                Timestamp = DateTime.UtcNow,
-                IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString()
-            };
-            _context.AuditLogs.Add(auditLog);
-            await _context.SaveChangesAsync();
-
             var categoryName = await _context.Categories.Where(c => c.Id == newItem.CategoryId).Select(c => c.Name).FirstAsync();
 
             return CreatedAtAction(nameof(GetItems), new { id = newItem.Id }, new ItemResponseDto
@@ -146,11 +126,68 @@ namespace SolarRateManagement.API.Controllers
             });
         }
 
+        [HttpPut("{id}")]
+        public async Task<IActionResult> UpdateItem(int id, [FromBody] CreateItemDto dto)
+        {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
+            var item = await _context.Items.FindAsync(id);
+            if (item == null)
+                return NotFound(new { Message = "Item not found." });
+
+            if (!await IsUserAuthorizedForShop(item.ShopId))
+                return Forbid();
+
+            item.CategoryId = dto.CategoryId;
+            item.ItemCode = dto.ItemCode.Trim();
+            item.ItemName = dto.ItemName.Trim();
+            item.Brand = dto.Brand?.Trim() ?? "";
+            item.Model = dto.Model?.Trim() ?? "";
+            item.Unit = dto.Unit.Trim();
+            item.Description = dto.Description?.Trim() ?? "";
+            item.IsActive = dto.IsActive;
+
+            await _context.SaveChangesAsync();
+            return Ok(item);
+        }
+
+        [HttpPut("{id}/toggle-status")]
+        public async Task<IActionResult> ToggleItemStatus(int id)
+        {
+            var item = await _context.Items.FindAsync(id);
+            if (item == null)
+                return NotFound(new { Message = "Item not found." });
+
+            if (!await IsUserAuthorizedForShop(item.ShopId))
+                return Forbid();
+
+            item.IsActive = !item.IsActive;
+            await _context.SaveChangesAsync();
+
+            return Ok(new { Message = $"Item status updated to {(item.IsActive ? "Active" : "Inactive")}.", IsActive = item.IsActive });
+        }
+
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteItem(int id)
+        {
+            var item = await _context.Items.FindAsync(id);
+            if (item == null)
+                return NotFound(new { Message = "Item not found." });
+
+            if (!await IsUserAuthorizedForShop(item.ShopId))
+                return Forbid();
+
+            _context.Items.Remove(item);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { Message = "Item deleted successfully." });
+        }
+
         private async Task<bool> IsUserAuthorizedForShop(int? targetShopId)
         {
             if (targetShopId == null)
             {
-                // Only SuperAdmin can view or modify global templates (null shop ID)
                 return _shopContext.IsSuperAdmin;
             }
 
