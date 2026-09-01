@@ -61,13 +61,13 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
-// Configure CORS to allow Angular SPA requests
+// Configure CORS to allow Angular SPA requests locally & production
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAngularApp",
         policy =>
         {
-            policy.WithOrigins("http://localhost:4200")
+            policy.SetIsOriginAllowed(_ => true)
                   .AllowAnyHeader()
                   .AllowAnyMethod()
                   .AllowCredentials();
@@ -79,7 +79,10 @@ var app = builder.Build();
 // Configure the HTTP request pipeline.
 app.UseMiddleware<SolarRateManagement.API.Middleware.GlobalExceptionMiddleware>();
 
-app.UseHttpsRedirection();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 
 app.UseCors("AllowAngularApp");
 
