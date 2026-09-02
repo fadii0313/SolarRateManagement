@@ -42,12 +42,18 @@ namespace SolarRateManagement.API.Controllers
             if (!_tokenService.VerifyPassword(loginDto.Password, user.PasswordHash))
                 return Unauthorized(new { Message = "Invalid username or password" });
 
-            var roles = user.UserRoles.Select(ur => ur.Role.Name).ToList();
-            var roleIds = user.UserRoles.Select(ur => ur.RoleId).ToList();
+            var roles = user.UserRoles
+                .Where(ur => ur.Role != null)
+                .Select(ur => ur.Role.Name)
+                .ToList();
+            var roleIds = user.UserRoles
+                .Where(ur => ur.Role != null)
+                .Select(ur => ur.RoleId)
+                .ToList();
 
             // Fetch permission codes linked to roles
             var permissions = await _context.RolePermissions
-                .Where(rp => roleIds.Contains(rp.RoleId))
+                .Where(rp => roleIds.Contains(rp.RoleId) && rp.Permission != null)
                 .Select(rp => rp.Permission.Code)
                 .Distinct()
                 .ToListAsync();
@@ -68,12 +74,14 @@ namespace SolarRateManagement.API.Controllers
             }
             else
             {
-                shopsDto = user.UserShops.Select(us => new UserShopDto
-                {
-                    ShopId = us.ShopId,
-                    ShopName = us.Shop.Name,
-                    RoleName = us.RoleInShop
-                }).ToList();
+                shopsDto = user.UserShops
+                    .Where(us => us.Shop != null)
+                    .Select(us => new UserShopDto
+                    {
+                        ShopId = us.ShopId,
+                        ShopName = us.Shop.Name,
+                        RoleName = us.RoleInShop
+                    }).ToList();
             }
 
             var accessToken = _tokenService.GenerateAccessToken(user, roles, permissions);
