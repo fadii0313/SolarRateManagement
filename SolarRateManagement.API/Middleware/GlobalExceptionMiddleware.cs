@@ -39,8 +39,10 @@ namespace SolarRateManagement.API.Middleware
             var response = new
             {
                 success = false,
-                message = "An unexpected error occurred on the server. Please try again later.",
-                errors = new[] { exception.Message }
+                message = "An unexpected error occurred on the server.",
+                error = exception.Message,
+                innerError = exception.InnerException?.Message,
+                detail = exception.ToString()
             };
 
             var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };

@@ -4,6 +4,8 @@ using Microsoft.IdentityModel.Tokens;
 using SolarRateManagement.Application.Common.Interfaces;
 using SolarRateManagement.Infrastructure.Data;
 using SolarRateManagement.Infrastructure.Services;
+using System;
+using System.IO;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -21,7 +23,7 @@ builder.Host.ConfigureAppConfiguration((hostingContext, config) =>
 builder.Services.AddControllers();
 
 // Register DbContext dynamically supporting SQL Server (LocalDB) and PostgreSQL (Production / Cloud)
-var connString = builder.Configuration.GetConnectionString("DefaultConnection") ?? "";
+var connString = GetFormattedConnectionString(builder.Configuration);
 var isPostgres = connString.Contains("postgres", StringComparison.OrdinalIgnoreCase) ||
                  connString.Contains("Host=", StringComparison.OrdinalIgnoreCase) ||
                  builder.Configuration.GetValue<bool>("UsePostgres");
@@ -112,8 +114,46 @@ using (var scope = app.Services.CreateScope())
     catch (Exception ex)
     {
         var logger = services.GetRequiredService<ILogger<Program>>();
-        logger.LogError(ex, "An error occurred while seeding the database.");
+        logger.LogError(ex, "An error occurred while initializing or seeding the database: {Message}", ex.Message);
     }
 }
 
 app.Run();
+
+static string GetFormattedConnectionString(IConfiguration configuration)
+{
+    var conn = configuration.GetConnectionString("DefaultConnection");
+    if (string.IsNullOrWhiteSpace(conn))
+    {
+        conn = Environment.GetEnvironmentVariable("DATABASE_URL")
+            ?? Environment.GetEnvironmentVariable("DefaultConnection")
+            ?? Environment.GetEnvironmentVariable("POSTGRES_CONNECTION_STRING")
+            ?? "";
+    }
+
+    if (string.IsNullOrWhiteSpace(conn)) return conn;
+
+    // Convert postgres:// or postgresql:// URI format if present
+    if (conn.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) ||
+        conn.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
+    {
+        try
+        {
+            var uri = new Uri(conn);
+            var userInfo = uri.UserInfo.Split(':');
+            var user = userInfo.Length > 0 ? Uri.UnescapeDataString(userInfo[0]) : "";
+            var pass = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : "";
+            var host = uri.Host;
+            var port = uri.Port > 0 ? uri.Port : 5432;
+            var db = uri.AbsolutePath.TrimStart('/');
+
+            return $"Host={host};Port={port};Database={db};Username={user};Password={pass};SSL Mode=Require;Trust Server Certificate=true;";
+        }
+        catch
+        {
+            return conn;
+        }
+    }
+
+    return conn;
+}
