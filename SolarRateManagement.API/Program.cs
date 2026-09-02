@@ -22,7 +22,7 @@ builder.Services.AddControllers();
 
 // Register DbContext dynamically supporting SQL Server (LocalDB) and PostgreSQL (Production / Cloud)
 var connString = builder.Configuration.GetConnectionString("DefaultConnection") ?? "";
-var isPostgres = connString.Contains("postgres", StringComparison.OrdinalIgnoreCase) || 
+var isPostgres = connString.Contains("postgres", StringComparison.OrdinalIgnoreCase) ||
                  connString.Contains("Host=", StringComparison.OrdinalIgnoreCase) ||
                  builder.Configuration.GetValue<bool>("UsePostgres");
 
