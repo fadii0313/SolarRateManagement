@@ -143,6 +143,111 @@ namespace SolarRateManagement.API.Controllers
             return Ok(new { Message = "User created successfully.", UserId = newUser.Id });
         }
 
+        [HttpPut("{id}")]
+        public async Task<IActionResult> UpdateUser(int id, [FromBody] UpdateUserDto dto)
+        {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
+            if (!await IsUserAuthorizedToManageUsers())
+                return Forbid();
+
+            var user = await _context.Users
+                .Include(u => u.UserRoles)
+                .Include(u => u.UserShops)
+                .FirstOrDefaultAsync(u => u.Id == id);
+
+            if (user == null)
+                return NotFound(new { Message = "User not found." });
+
+            // Ensure username/email uniqueness if changed
+            if (user.Username.ToLower() != dto.Username.ToLower() &&
+                await _context.Users.AnyAsync(u => u.Username.ToLower() == dto.Username.ToLower()))
+            {
+                return BadRequest(new { Message = $"Username '{dto.Username}' is already taken." });
+            }
+
+            if (user.Email.ToLower() != dto.Email.ToLower() &&
+                await _context.Users.AnyAsync(u => u.Email.ToLower() == dto.Email.ToLower()))
+            {
+                return BadRequest(new { Message = $"Email '{dto.Email}' is registered to another user." });
+            }
+
+            user.FirstName = dto.FirstName.Trim();
+            user.LastName = dto.LastName.Trim();
+            user.Username = dto.Username.Trim();
+            user.Email = dto.Email.Trim();
+            user.Mobile = dto.Mobile?.Trim() ?? string.Empty;
+            user.IsActive = dto.IsActive;
+
+            if (!string.IsNullOrWhiteSpace(dto.Password))
+            {
+                user.PasswordHash = _tokenService.HashPassword(dto.Password);
+            }
+
+            // Update role if changed
+            if (dto.RoleId > 0)
+            {
+                _context.UserRoles.RemoveRange(user.UserRoles);
+                _context.UserRoles.Add(new UserRole { UserId = user.Id, RoleId = dto.RoleId });
+            }
+
+            // Update shop assignment if changed
+            if (dto.ShopId.HasValue && dto.ShopId.Value > 0)
+            {
+                _context.UserShops.RemoveRange(user.UserShops);
+                _context.UserShops.Add(new UserShop { UserId = user.Id, ShopId = dto.ShopId.Value, RoleInShop = "Manager" });
+            }
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new { Message = "User updated successfully." });
+        }
+
+        [HttpPut("{id}/toggle-status")]
+        public async Task<IActionResult> ToggleUserStatus(int id)
+        {
+            if (!await IsUserAuthorizedToManageUsers())
+                return Forbid();
+
+            var user = await _context.Users.FindAsync(id);
+            if (user == null)
+                return NotFound(new { Message = "User not found." });
+
+            user.IsActive = !user.IsActive;
+            await _context.SaveChangesAsync();
+
+            return Ok(new { Message = $"User status changed to {(user.IsActive ? "Active" : "Inactive")}.", user.IsActive });
+        }
+
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteUser(int id)
+        {
+            if (!await IsUserAuthorizedToManageUsers())
+                return Forbid();
+
+            var user = await _context.Users
+                .Include(u => u.UserRoles)
+                .Include(u => u.UserShops)
+                .FirstOrDefaultAsync(u => u.Id == id);
+
+            if (user == null)
+                return NotFound(new { Message = "User not found." });
+
+            // Prevent deleting self if SuperAdmin
+            if (_shopContext.CurrentUserId == id)
+            {
+                return BadRequest(new { Message = "You cannot delete your own logged-in account." });
+            }
+
+            _context.UserRoles.RemoveRange(user.UserRoles);
+            _context.UserShops.RemoveRange(user.UserShops);
+            _context.Users.Remove(user);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { Message = "User deleted successfully." });
+        }
+
         private async Task<bool> IsUserAuthorizedToManageUsers()
         {
             if (_shopContext.IsSuperAdmin) return true;

@@ -52,6 +52,26 @@ namespace SolarRateManagement.API.Controllers
             return Ok(logs);
         }
 
+        [HttpGet("notifications")]
+        public async Task<IActionResult> GetRateNotifications()
+        {
+            var rateLogs = await _context.AuditLogs
+                .Include(a => a.User)
+                .Where(a => a.Module == "Rates" || a.Action == "SaveDailyRates")
+                .OrderByDescending(a => a.Timestamp)
+                .Take(15)
+                .Select(a => new
+                {
+                    a.Id,
+                    UserFullName = a.User != null ? $"{a.User.FirstName} {a.User.LastName}" : "Branch Manager",
+                    Message = a.NewValue,
+                    a.Timestamp
+                })
+                .ToListAsync();
+
+            return Ok(rateLogs);
+        }
+
         private async Task<bool> HasAuditViewPermission()
         {
             if (_shopContext.IsSuperAdmin)

@@ -155,13 +155,16 @@ namespace SolarRateManagement.API.Controllers
 
             await _context.SaveChangesAsync();
 
+            var shopObj = await _context.Shops.FindAsync(shopId.Value);
+            var shopName = shopObj?.Name ?? $"Shop #{shopId.Value}";
+
             // Record edit in audit log
             var auditLog = new AuditLog
             {
                 UserId = _shopContext.CurrentUserId!.Value,
                 Action = "SaveDailyRates",
                 Module = "Rates",
-                NewValue = $"Saved/updated rates for {ratesDto.Count} items on date {targetDate:yyyy-MM-dd} in shop context {shopId}.",
+                NewValue = $"Rate update submitted by '{shopName}': {ratesDto.Count} items updated for {targetDate:yyyy-MM-dd}.",
                 Timestamp = DateTime.UtcNow,
                 IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString()
             };
