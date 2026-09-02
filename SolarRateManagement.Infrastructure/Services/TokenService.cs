@@ -23,7 +23,11 @@ namespace SolarRateManagement.Infrastructure.Services
         public string GenerateAccessToken(User user, List<string> roles, List<string> permissions)
         {
             var jwtSettings = _configuration.GetSection("JwtSettings");
-            var keyStr = jwtSettings["SecurityKey"] ?? "SolarRateManagementSystemAdvancedSuperSecretKey123!";
+            var keyStr = jwtSettings["SecurityKey"];
+            if (string.IsNullOrWhiteSpace(keyStr) || Encoding.UTF8.GetBytes(keyStr).Length < 32)
+            {
+                keyStr = "SolarRateManagementSystemAdvancedSuperSecretKey123!MustBeAtLeast256BitsLongForHS256Algorithm";
+            }
             var issuer = jwtSettings["Issuer"] ?? "SolarRateManagementAPI";
             var audience = jwtSettings["Audience"] ?? "SolarRateManagementUI";
             var expiryMinutes = double.TryParse(jwtSettings["ExpiryMinutes"], out var minutes) ? minutes : 60;

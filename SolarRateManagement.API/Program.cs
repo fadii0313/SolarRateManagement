@@ -49,7 +49,11 @@ builder.Services.AddScoped<IShopContext, ShopContext>();
 
 // Configure JWT Authentication
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
-var keyStr = jwtSettings["SecurityKey"] ?? "SolarRateManagementSystemAdvancedSuperSecretKey123!";
+var keyStr = jwtSettings["SecurityKey"];
+if (string.IsNullOrWhiteSpace(keyStr) || Encoding.UTF8.GetBytes(keyStr).Length < 32)
+{
+    keyStr = "SolarRateManagementSystemAdvancedSuperSecretKey123!MustBeAtLeast256BitsLongForHS256Algorithm";
+}
 var issuer = jwtSettings["Issuer"] ?? "SolarRateManagementAPI";
 var audience = jwtSettings["Audience"] ?? "SolarRateManagementUI";
 
